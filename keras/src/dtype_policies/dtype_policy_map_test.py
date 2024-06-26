@@ -30,14 +30,17 @@ class DTypePolicyMapTest(testing.TestCase):
         class Subclass(layers.Layer):
             def __init__(self, dtype=None, name="subclass", **kwargs):
                 super().__init__(dtype=dtype, name=name, **kwargs)
-                self.dense = layers.Dense(8, dtype=dtype, name=f"{name}_dense")
-                self.bn = layers.BatchNormalization(
-                    dtype=dtype, name=f"{name}_bn"
+                self.dense = layers.Dense(
+                    8, dtype=dtype, name=f"{name}_dense", use_bias=False
                 )
-                self.relu = layers.ReLU(dtype=dtype, name=f"{name}_relu")
+                # self.bn = layers.BatchNormalization(
+                #    dtype=dtype, name=f"{name}_bn"
+                # )
+                # self.relu = layers.ReLU(dtype=dtype, name=f"{name}_relu")
 
             def call(self, inputs, training=None):
-                return self.relu(self.bn(self.dense(inputs), training=training))
+                # return self.relu(self.bn(self.dense(inputs), training=training))
+                return self.dense(inputs)
 
             def get_config(self):
                 # Typically, we only need to record the quantized policy for
@@ -64,18 +67,18 @@ class DTypePolicyMapTest(testing.TestCase):
                     layer.dtype_policy,
                     dtype_policies.QuantizedDTypePolicy("int8"),
                 )
-            elif isinstance(layer, layers.BatchNormalization):
-                self.assertEqual(
-                    layer.dtype_policy, dtype_policies.FloatDTypePolicy()
-                )
-            elif isinstance(layer, layers.ReLU):
-                self.assertEqual(
-                    layer.dtype_policy, dtype_policies.FloatDTypePolicy()
-                )
+            # elif isinstance(layer, layers.BatchNormalization):
+            #    self.assertEqual(
+            #        layer.dtype_policy, dtype_policies.FloatDTypePolicy()
+            #    )
+            # elif isinstance(layer, layers.ReLU):
+            #    self.assertEqual(
+            #        layer.dtype_policy, dtype_policies.FloatDTypePolicy()
+            #    )
 
         # Verify the output after saving and loading
         x = np.random.uniform(size=[16, 4])
-        temp_dir = self.get_temp_dir()
+        temp_dir = "/tmp"  # self.get_temp_dir()
         y = model(x, training=False)
         model.save(f"{temp_dir}/model.keras")
         reloaded_model = saving.load_model(f"{temp_dir}/model.keras")

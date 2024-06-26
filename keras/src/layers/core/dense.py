@@ -100,12 +100,14 @@ class Dense(Layer):
         self.supports_masking = True
 
     def build(self, input_shape):
+        print(f"  building dense with {self.quantization_mode}")
         input_dim = input_shape[-1]
         if self.quantization_mode:
             self.quantized_build(input_shape, mode=self.quantization_mode)
         if self.quantization_mode != "int8":
             # If the layer is quantized to int8, `self._kernel` will be added
             # in `self._int8_build`. Therefore, we skip it here.
+            print("adding kernel")
             self._kernel = self.add_weight(
                 name="kernel",
                 shape=(input_dim, self.units),
@@ -127,6 +129,7 @@ class Dense(Layer):
         self.built = True
         if self.lora_rank:
             self.enable_lora(self.lora_rank)
+        print(f"  done building dense ")
 
     @property
     def kernel(self):
@@ -211,7 +214,11 @@ class Dense(Layer):
                 target_variables.append(self.outputs_grad_amax_history)
             else:
                 raise self._quantization_mode_error(self.quantization_mode)
+        print(
+            f"   {self.name} save own variables, total {len(target_variables)}"
+        )
         for i, variable in enumerate(target_variables):
+            print(f"    save own variables: {i}, {variable}")
             store[str(i)] = variable
 
     def load_own_variables(self, store):
@@ -266,6 +273,9 @@ class Dense(Layer):
 
     def _check_load_own_variables(self, store):
         all_vars = self._trainable_variables + self._non_trainable_variables
+        print(f"   {self.name} load own variables, total {len(all_vars)}")
+        for v in all_vars:
+            print(v)
         if len(store.keys()) != len(all_vars):
             if len(all_vars) == 0 and not self.built:
                 raise ValueError(

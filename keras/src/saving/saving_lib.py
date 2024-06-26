@@ -506,11 +506,13 @@ def _save_state(
 
     # If the saveable has already been saved, skip it.
     if id(saveable) in visited_saveables:
+        print(f"skip {saveable}")
         return
-
     if hasattr(saveable, "save_own_variables") and weights_store:
+        print(f"save own variables: {saveable}")
         saveable.save_own_variables(weights_store.make(inner_path))
     if hasattr(saveable, "save_assets") and assets_store:
+        print(f"save assets: {saveable}")
         saveable.save_assets(assets_store.make(inner_path))
 
     visited_saveables.add(id(saveable))
@@ -518,6 +520,7 @@ def _save_state(
     # Recursively save state of children saveables (layers, optimizers, etc.)
     for child_attr, child_obj in _walk_saveable(saveable):
         if isinstance(child_obj, KerasSaveable):
+            print(f"  go to saveable child {child_attr}, {child_obj}")
             _save_state(
                 child_obj,
                 weights_store,
@@ -528,6 +531,7 @@ def _save_state(
                 visited_saveables=visited_saveables,
             )
         elif isinstance(child_obj, (list, dict, tuple, set)):
+            print(f"  go to container child {child_attr}, {child_obj}")
             _save_container_state(
                 child_obj,
                 weights_store,
@@ -552,6 +556,7 @@ def _load_state(
     from keras.src.saving.keras_saveable import KerasSaveable
 
     if visited_saveables and id(saveable) in visited_saveables:
+        print(f"skip loading {saveable}")
         return
 
     failure = False

@@ -505,6 +505,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                 when writing custom data parallel training loops.
             name: String name of the variable. Useful for debugging purposes.
         """
+        print(f"{self.name} adding weights with name: {name}")
         self._check_super_called()
         if shape is None:
             shape = ()
@@ -1213,7 +1214,9 @@ class Layer(BackendLayer, Operation, KerasSaveable):
             store: Dict where the state of the model will be saved.
         """
         all_vars = self._trainable_variables + self._non_trainable_variables
+        print(f"   {self.name} save own variables, total {len(all_vars)}")
         for i, v in enumerate(all_vars):
+            print(f"    save own variables: {i}, {v}")
             store[f"{i}"] = v
 
     def load_own_variables(self, store):
@@ -1226,6 +1229,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
             store: Dict from which the state of the model will be loaded.
         """
         all_vars = self._trainable_variables + self._non_trainable_variables
+        print(f"   {self.name} load own variables, total {len(all_vars)}")
         if len(store.keys()) != len(all_vars):
             if len(all_vars) == 0 and not self.built:
                 raise ValueError(
@@ -1258,6 +1262,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                 f"Expected: {[v.name for v in all_vars]}"
             )
         for i, v in enumerate(all_vars):
+            print(f"    load own variables: {i}, {v}")
             v.assign(store[f"{i}"])
 
     def _track_variable(self, variable):

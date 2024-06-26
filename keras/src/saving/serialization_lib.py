@@ -397,7 +397,7 @@ def serialize_dict(obj):
     ]
 )
 def deserialize_keras_object(
-    config, custom_objects=None, safe_mode=True, **kwargs
+    config, custom_objects=None, safe_mode=True, depth=0, **kwargs
 ):
     """Retrieve the object by deserializing the config dict.
 
@@ -502,8 +502,12 @@ def deserialize_keras_object(
     tlco = global_state.get_global_attribute("custom_objects_scope_dict", {})
     gco = object_registration.GLOBAL_CUSTOM_OBJECTS
     custom_objects = {**custom_objects, **tlco, **gco}
-
+    prefix = ">" * (depth + 1) + " "
+    print(
+        prefix + f"start with config {config}, custom object {custom_objects}"
+    )
     if config is None:
+        print(prefix + "skip config is empty")
         return None
 
     if (
@@ -513,15 +517,30 @@ def deserialize_keras_object(
     ):
         # This is to deserialize plain functions which are serialized as
         # string names by legacy saving formats.
-        return custom_objects[config]
+        print(prefix + "return custom objects lookup")
+        ret = custom_objects[config]
+        print(prefix + f"done start return custom objects lookup {ret}")
+        return ret
 
     if isinstance(config, (list, tuple)):
-        return [
+        print(
+            prefix
+            + "return list or tuple, calling into deserialize_keras_object"
+        )
+        ret = [
             deserialize_keras_object(
-                x, custom_objects=custom_objects, safe_mode=safe_mode
+                x,
+                custom_objects=custom_objects,
+                safe_mode=safe_mode,
+                depth=depth + 1,
             )
             for x in config
         ]
+        print(
+            prefix
+            + f"done return list or tuple, calling into deserialize_keras_object {ret}"
+        )
+        return ret
 
     if module_objects is not None:
         inner_config, fn_module_name, has_custom_object = None, None, False
@@ -570,37 +589,66 @@ def deserialize_keras_object(
             # Return if not found in either module objects or custom objects
             if config not in module_objects:
                 # Object has already been deserialized
-                return config
+                print(prefix + "return already in module object")
+                ret = config
+                print(prefix + "done return already in module object")
+                return ret
             if isinstance(module_objects[config], types.FunctionType):
-                return deserialize_keras_object(
+                print(
+                    prefix
+                    + f"return function type, calling serialize with {module_objects[config]}"
+                )
+                ret = deserialize_keras_object(
                     serialize_with_public_fn(
                         module_objects[config], config, fn_module_name
                     ),
                     custom_objects=custom_objects,
+                    depth=depth + 1,
                 )
-            return deserialize_keras_object(
+                print(prefix + f"done return function type, ret {ret}")
+                return ret
+
+            print(
+                prefix
+                + f"return no custom object, calling serialize with {module_objects[config]}"
+            )
+            ret = deserialize_keras_object(
                 serialize_with_public_class(
                     module_objects[config], inner_config=inner_config
                 ),
                 custom_objects=custom_objects,
+                depth=depth + 1,
             )
+            print(prefix + f"done return no custom object, ret {ret}")
+            return ret
 
     if isinstance(config, PLAIN_TYPES):
+        print(prefix + f"return plain config {config}")
         return config
     if not isinstance(config, dict):
         raise TypeError(f"Could not parse config: {config}")
 
     if "class_name" not in config or "config" not in config:
-        return {
+        print(prefix + f"class name or config not in config {config}")
+        ret = {
             key: deserialize_keras_object(
-                value, custom_objects=custom_objects, safe_mode=safe_mode
+                value,
+                custom_objects=custom_objects,
+                safe_mode=safe_mode,
+                depth=depth + 1,
             )
             for key, value in config.items()
         }
+        print(prefix + f"done class name or config not in config {ret}")
+        return ret
 
     class_name = config["class_name"]
     inner_config = config["config"] or {}
     custom_objects = custom_objects or {}
+    print(
+        prefix
+        + f"deserialize {class_name}, inner config {inner_config}, custom_bojects {custom_objects}"
+    )
 
     # Special cases:
     if class_name == "__keras_tensor__":
@@ -608,37 +656,51 @@ def deserialize_keras_object(
             inner_config["shape"], dtype=inner_config["dtype"]
         )
         obj._pre_serialization_keras_history = inner_config["keras_history"]
+        print(prefix + f"keras tensor {obj}")
         return obj
 
     if class_name == "__tensor__":
-        return backend.convert_to_tensor(
+        ret = backend.convert_to_tensor(
             inner_config["value"], dtype=inner_config["dtype"]
         )
+        print(prefix + f"tensor {ret}")
+        return ret
     if class_name == "__numpy__":
-        return np.array(inner_config["value"], dtype=inner_config["dtype"])
+        ret = np.array(inner_config["value"], dtype=inner_config["dtype"])
+        print(prefix + f"numpy {ret}")
+        return ret
     if config["class_name"] == "__bytes__":
-        return inner_config["value"].encode("utf-8")
+        ret = inner_config["value"].encode("utf-8")
+        print(prefix + f"bytes {ret}")
+        return ret
     if config["class_name"] == "__ellipsis__":
+        print(prefix + "ellipsis")
         return Ellipsis
     if config["class_name"] == "__slice__":
-        return slice(
+        ret = slice(
             deserialize_keras_object(
                 inner_config["start"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
+                depth=depth + 1,
             ),
             deserialize_keras_object(
                 inner_config["stop"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
+                depth=depth + 1,
             ),
             deserialize_keras_object(
                 inner_config["step"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
+                depth=depth + 1,
             ),
         )
+        print(prefix + f"slice {ret}")
+        return ret
     if config["class_name"] == "__lambda__":
+        print(prefix + "lambda")
         if safe_mode:
             raise ValueError(
                 "Requested the deserialization of a `lambda` object. "
@@ -667,15 +729,17 @@ def deserialize_keras_object(
             ),
             inner_config,
         )
-        return obj._deserialize(tuple(inner_config))
+        ret = obj._deserialize(tuple(inner_config))
+        print(prefix + f"typespec {ret}")
+        return ret
 
     # Below: classes and functions.
     module = config.get("module", None)
     registered_name = config.get("registered_name", class_name)
-
+    print(prefix + f"module {module}, register name {registered_name}")
     if class_name == "function":
         fn_name = inner_config
-        return _retrieve_class_or_fn(
+        ret = _retrieve_class_or_fn(
             fn_name,
             registered_name,
             module,
@@ -683,14 +747,18 @@ def deserialize_keras_object(
             full_config=config,
             custom_objects=custom_objects,
         )
+        print(prefix + f"retrieve function {fn_name}, {ret}")
+        return ret
 
     # Below, handling of all classes.
     # First, is it a shared object?
     if "shared_object_id" in config:
         obj = get_shared_object(config["shared_object_id"])
         if obj is not None:
+            print(prefix + f"return shared object {obj}")
             return obj
 
+    print(prefix + f"retrieve class {class_name}")
     cls = _retrieve_class_or_fn(
         class_name,
         registered_name,
@@ -699,8 +767,10 @@ def deserialize_keras_object(
         full_config=config,
         custom_objects=custom_objects,
     )
+    print(prefix + f"done retrieve class {cls}")
 
     if isinstance(cls, types.FunctionType):
+        print(prefix + f"function type {cls}")
         return cls
     if not hasattr(cls, "from_config"):
         raise TypeError(
@@ -715,7 +785,9 @@ def deserialize_keras_object(
     safe_mode_scope = SafeModeScope(safe_mode)
     with custom_obj_scope, safe_mode_scope:
         try:
-            instance = cls.from_config(inner_config)
+            print(prefix + f"====== calling from config with {cls}")
+            instance = cls.from_config(inner_config, depth=depth + 1)
+            print(prefix + f"====== done calling from config with {instance}")
         except TypeError as e:
             raise TypeError(
                 f"{cls} could not be deserialized properly. Please"
@@ -729,15 +801,22 @@ def deserialize_keras_object(
         if build_config and not instance.built:
             instance.build_from_config(build_config)
             instance.built = True
+            print(prefix + f"build config instance {instance}")
         compile_config = config.get("compile_config", None)
         if compile_config:
             instance.compile_from_config(compile_config)
             instance.compiled = True
+            print(prefix + f"compile config instance {instance}")
 
     if "shared_object_id" in config:
         record_object_after_deserialization(
             instance, config["shared_object_id"]
         )
+        print(
+            prefix
+            + f"record config instance {instance} with {config['shared_object_id']}"
+        )
+    print(prefix + f"return instance {instance}")
     return instance
 
 

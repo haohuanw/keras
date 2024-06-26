@@ -6,6 +6,9 @@ import torch
 from keras.src.backend.common.stateless_scope import in_stateless_scope
 from keras.src.ops.operation import Operation
 
+# NEW_IMPL=False
+NEW_IMPL = True
+
 
 class TorchLayer(torch.nn.Module):
     """Adaptation layer to make sure keras.layers.Layer works well with
@@ -28,7 +31,7 @@ class TorchLayer(torch.nn.Module):
       Since keras also allows untrack / track object post build, eg.
     Dense.enable_lora(), Dense.quantization(); _untrack_torch_params() is added
     that allows refresh the parameters expose to torch module. A re-populate
-    will trigger every time when Layer._track_variable() and
+    will trigger every time when Layer.track_variable() and
     Layer._untrack_variable() is called.
 
     Few additional points that user should be aware of:
@@ -66,6 +69,11 @@ class TorchLayer(torch.nn.Module):
         self._track_torch_params()
 
     def _track_torch_params(self):
+        if not NEW_IMPL:
+            self.torch_params = torch.nn.ParameterDict(
+                {variable.path: variable.value for variable in self.variables}
+            )
+            return
         for layer in self._layers:
             layer._track_torch_params()
         if self._torch_params_tracked():
@@ -126,19 +134,25 @@ class TorchLayer(torch.nn.Module):
         # class to be tracked by torch since keras3 user can still do
         # self._layers to reference all layers instead of using
         # torch.nn.Module.named_members().
-        if isinstance(value, list) and all(
-            [isinstance(v, Layer) for v in value]
-        ):
-            for idx, v in enumerate(value):
-                self.add_module(f"{name}_{idx}", v)
+        # if isinstance(value, list) and all(
+        #    [isinstance(v, Layer) for v in value]
+        # ):
+        #    for idx, v in enumerate(value):
+        #        self.add_module(f"torch_module_{name}_{idx}", v)
         return name, value
 
-    def _post_track_variable(self, _):
+    def _post_track_variable(self, variable):
         if self._torch_params_tracked():
+            if not NEW_IMPL:
+                self.torch_params[variable.path] = variable.value
+                return
             self._untrack_torch_params()
             self._track_torch_params()
 
-    def _post_untrack_variable(self, _):
+    def _post_untrack_variable(self, variable):
         if self._torch_params_tracked():
+            if not NEW_IMPL:
+                self.torch_params[variable.path] = variable.value
+                return
             self._untrack_torch_params()
             self._track_torch_params()
