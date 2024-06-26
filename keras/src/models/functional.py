@@ -438,9 +438,11 @@ def functional_from_config(cls, config, custom_objects=None):
             node_data: List of layer configs
         """
         args, kwargs = deserialize_node(node_data, created_layers)
+        print(f"===================================== building layer {layer} with args {args} kwargs {kwargs}")
         # Call layer on its inputs, thus creating the node
         # and building the layer if needed.
         layer(*args, **kwargs)
+        print(f"===================================== done building layer {layer} with args {args} kwargs {kwargs}")
 
     def process_layer(layer_data):
         """Deserializes a layer and index its inbound nodes.
@@ -452,15 +454,18 @@ def functional_from_config(cls, config, custom_objects=None):
 
         # Instantiate layer.
         if "module" not in layer_data:
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!from config {layer_data}")
             # Legacy format deserialization (no "module" key)
             # used for H5 and SavedModel formats
             layer = saving_utils.model_from_config(
                 layer_data, custom_objects=custom_objects
             )
         else:
+            print(f"========================== Processing keras object layer {layer_data}")
             layer = serialization_lib.deserialize_keras_object(
                 layer_data, custom_objects=custom_objects
             )
+            print(f"========================== Done Processing keras object layer {layer_data}")
         created_layers[layer_name] = layer
 
         # Gather layer inputs.
@@ -470,6 +475,7 @@ def functional_from_config(cls, config, custom_objects=None):
             # on the fly because the inbound node may not yet exist,
             # in case of layer shared at different topological depths
             # (e.g. a model such as A(B(A(B(x)))))
+            print(f"============================= Add unprocessed node {node_data} from layer {layer}")
             add_unprocessed_node(layer, node_data)
 
     # First, we create all layers and enqueue nodes to be processed
@@ -493,6 +499,7 @@ def functional_from_config(cls, config, custom_objects=None):
                 while node_index < len(node_data_list):
                     node_data = node_data_list[node_index]
                     try:
+                        print(f"============================ Process node {node_data} with layer {layer}")
                         process_node(layer, node_data)
 
                     # If the node does not have all inbound layers
@@ -644,8 +651,12 @@ def deserialize_node(node_data, created_layers):
             )
         return [unpack_singleton(input_tensors)], kwargs
 
+    print(f"=========================== Deserialize args")
     args = serialization_lib.deserialize_keras_object(node_data["args"])
+    print(f"=========================== Done Deserialize args")
+    print(f"=========================== Deserialize kwargs")
     kwargs = serialization_lib.deserialize_keras_object(node_data["kwargs"])
+    print(f"=========================== Done Deserialize kwargs")
 
     def convert_revived_tensor(x):
         if isinstance(x, backend.KerasTensor):

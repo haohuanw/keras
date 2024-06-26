@@ -107,6 +107,7 @@ class Variable(KerasVariable):
     # Overload native accessor.
     @classmethod
     def __torch_function__(cls, func, types, args=(), kwargs=None):
+        print("torch function is called")
         args = [
             arg.value if isinstance(arg, KerasVariable) else arg for arg in args
         ]

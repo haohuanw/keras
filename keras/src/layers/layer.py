@@ -505,21 +505,28 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                 when writing custom data parallel training loops.
             name: String name of the variable. Useful for debugging purposes.
         """
-        print(f"{self.name} adding weights with name: {name}")
+        print(f"{self.name} adding weights with name: {name} step 1")
         self._check_super_called()
         if shape is None:
             shape = ()
         if dtype is not None:
+            print(f"{self.name} adding weights with name: {name} step 2")
             dtype = backend.standardize_dtype(dtype)
         else:
+            print(f"{self.name} adding weights with name: {name} step 3")
             dtype = self.variable_dtype
         if initializer is None:
             if "float" in dtype:
                 initializer = "glorot_uniform"
             else:
                 initializer = "zeros"
+        print(f"{self.name} adding weights with name: {name} step 4")
+        print(f"====={self.name} getting initializer {initializer}")
+        initializer = initializers.get(initializer)
+        print(f"====={self.name} done getting initializer {initializer}")
         initializer = initializers.get(initializer)
         with backend.name_scope(self.name, caller=self):
+            print(f"{self.name} adding weights with name: {name} step 5")
             variable = backend.Variable(
                 initializer=initializer,
                 shape=shape,
@@ -529,10 +536,19 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                 aggregation=aggregation,
                 name=name,
             )
+
+        print(f"{self.name} adding weights with name: {name} step 6")
         # Will be added to layer.losses
+        print(f"====={self.name} getting regularizer {regularizer}")
         variable.regularizer = regularizers.get(regularizer)
+        print(f"====={self.name} done getting regularizer {regularizer}")
+        print(f"====={self.name} getting constraint {constraint}")
         variable.constraint = constraints.get(constraint)
+        print(f"====={self.name} done getting constraint {constraint}")
+        print(f"====={self.name} track variable")
         self._track_variable(variable)
+        print(f"====={self.name} done track variable")
+        print(f"{self.name} adding weights with name: {name} step 7")
         return variable
 
     @property
@@ -758,6 +774,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
 
     @traceback_utils.filter_traceback
     def __call__(self, *args, **kwargs):
+        print(f"Called {self.name}")
         self._check_super_called()
         self._called = True
 
@@ -805,7 +822,9 @@ class Layer(BackendLayer, Operation, KerasSaveable):
         ################
         # 4. Call build
         with self._open_name_scope():
+            print(f"maybe build {self.name}")
             self._maybe_build(call_spec)
+            print(f"done maybe build {self.name}")
 
         ##########################
         # 5. Infer training value
@@ -1266,13 +1285,17 @@ class Layer(BackendLayer, Operation, KerasSaveable):
             v.assign(store[f"{i}"])
 
     def _track_variable(self, variable):
+        print(f"====={self.name} in track variable for {variable}")
         if variable.trainable:
+            print(f"====={self.name} add to trainable store: {variable}")
             self._tracker.add_to_store("trainable_variables", variable)
         else:
             self._tracker.add_to_store("non_trainable_variables", variable)
         if not self.trainable:
             variable.trainable = False
+        print(f"====={self.name} pre-call post track variable: {variable}")
         self._post_track_variable(variable)
+        print(f"====={self.name} done calling post track variable: {variable}")
 
     def _untrack_variable(self, variable):
         previous_lock_state = self._tracker.locked
@@ -1304,6 +1327,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
 
     def _maybe_build(self, call_spec):
         if self.built:
+            print(f"skip building {self.name}")
             return
 
         shapes_dict = get_shapes_dict(call_spec)
@@ -1317,6 +1341,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                 call_spec=call_spec,
                 class_name=self.__class__.__name__,
             )
+            print(f"build {self.name} with updated shape dict {shapes_dict}")
             self.build(**shapes_dict)
             # Check input spec again (after build, since self.input_spec
             # may have been updated
@@ -1326,6 +1351,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
         # Otherwise, attempt to build the layer by calling it on symbolic input.
         if might_have_unbuilt_state(self):
             try:
+                print(f"call {self.name}::compute_output_spec with {call_spec.arguments_dict}")
                 backend.compute_output_spec(
                     self.call, **call_spec.arguments_dict
                 )
@@ -1348,6 +1374,7 @@ class Layer(BackendLayer, Operation, KerasSaveable):
                     "children layers).\n"
                     f"Exception encountered: ''{e}''"
                 )
+        print(f"build {self.name} with first shape {first_shape}")
         self.build(first_shape)
 
     def _build_by_run_for_single_pos_arg(self, input_shape):
@@ -1390,7 +1417,9 @@ class Layer(BackendLayer, Operation, KerasSaveable):
 
     def __setattr__(self, name, value):
         # Track Variables, Layers, Metrics, SeedGenerators.
+        print(f"layer set attr {name}: {value}")
         name, value = self._setattr_hook(name, value)
+        print(f"layer set attr after hook: {name}: {value}")
         if name != "_tracker":
             if not hasattr(self, "_tracker"):
                 self._initialize_tracker()

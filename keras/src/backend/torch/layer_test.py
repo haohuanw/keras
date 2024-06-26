@@ -66,6 +66,9 @@ class LayerTest(testing.TestCase):
             def __init__(self):
                 super().__init__()
                 self.child = ChildLayer()
+            
+            def call(self, input):
+                return self.child(input)
 
         class ChildLayer(layers.Layer):
 
@@ -74,6 +77,9 @@ class LayerTest(testing.TestCase):
                 self.w1 = self.add_weight()
                 self.w2 = self.add_weight(dtype="int32", trainable=False)
                 self.grand_child = GrandChildLayer()
+            
+            def call(self, input):
+                return self.grand_child(input)
 
         class GrandChildLayer(layers.Layer):
 
@@ -84,9 +90,12 @@ class LayerTest(testing.TestCase):
                 self.w5 = self.add_weight(
                     initializer="ones", shape=(2, 2), name="w5"
                 )
+            
+            def call(self, input):
+                return input
 
         layer = MyLayer()
-        layer.build(None)
+        layer(backend.KerasTensor((1,)))
 
         self.assertEqual(len(list(layer.parameters())), 5)
         w5 = self.get_torch_parameter_from_variable(
@@ -161,6 +170,9 @@ class LayerTest(testing.TestCase):
                 super().__init__()
                 self.w = self.add_weight(shape=(2, 2))
                 self.child = ChildLayer()
+            
+            def call(self, input):
+                return input + self.child(input) 
 
         class ChildLayer(layers.Layer):
             def __init__(self):
@@ -173,9 +185,12 @@ class LayerTest(testing.TestCase):
                 )
                 self.w = self.add_weight(shape=(2, 2))
                 self.seed_gen = backend.random.SeedGenerator(seed=1337)
+            
+            def call(self, input):
+                return input
 
         layer1 = Layer()
-        layer1.build(None)
+        layer1(backend.KerasTensor((1,)))
         layer1.child.seed_gen.next()
         layer1.child.stat.assign_add(1)
 
@@ -184,7 +199,7 @@ class LayerTest(testing.TestCase):
         global_state.clear_session()
 
         layer2 = Layer()
-        layer2.build(None)
+        layer2(backend.KerasTensor((1,)))
 
         layer2_initial_state_dict = layer2.state_dict()
 
@@ -220,15 +235,23 @@ class LayerTest(testing.TestCase):
                     Cell(),
                     Cell(),
                 ]
+            
+            def call(self, input):
+                o = input
+                for c in self.cells:
+                    o = c(o)
+                return o
 
         class Cell(layers.Layer):
             def __init__(self):
                 super().__init__()
                 self.w = self.add_weight(shape=(2, 2))
 
-        layer = Layer()
-        layer.build(None)
+            def call(self, input):
+                return input
 
+        layer = Layer()
+        layer(backend.KerasTensor((1,)))
         self.assertEqual(len(list(layer.parameters())), 3)
 
     def test_throw_error_when_build_not_called(self):
@@ -240,6 +263,6 @@ class LayerTest(testing.TestCase):
 
         layer = Layer()
         with self.assertRaisesRegex(
-            RuntimeError, "Did you forget to call build()?"
+            RuntimeError, "Did you forget to call model once?"
         ):
             layer.named_parameters()

@@ -514,6 +514,7 @@ class Model(Trainer, base_trainer.Trainer, Layer):
             or (argspec.varargs == "args" and argspec.varkw == "kwargs")
         )
         if is_functional_config and revivable_as_functional:
+            print("================ Functional ====================")
             # Revive Functional model
             # (but not Functional subclasses with a custom __init__)
             from keras.src.models.functional import functional_from_config
@@ -530,6 +531,7 @@ class Model(Trainer, base_trainer.Trainer, Layer):
         # In this case, we fall back to provide all config into the
         # constructor of the class.
         try:
+            print("================ Not Functional ====================")
             return cls(**config)
         except TypeError as e:
             raise TypeError(

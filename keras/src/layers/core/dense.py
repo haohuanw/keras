@@ -98,12 +98,15 @@ class Dense(Layer):
         self.lora_enabled = False
         self.input_spec = InputSpec(min_ndim=2)
         self.supports_masking = True
+        print(f"created {self.name} with {self.quantization_mode}")
 
     def build(self, input_shape):
-        print(f"  building dense with {self.quantization_mode}")
+        print(f"building {self.name} with {self.quantization_mode}")
         input_dim = input_shape[-1]
         if self.quantization_mode:
+            print(f"building {self.name} 1")
             self.quantized_build(input_shape, mode=self.quantization_mode)
+            print(f"building {self.name} 2")
         if self.quantization_mode != "int8":
             # If the layer is quantized to int8, `self._kernel` will be added
             # in `self._int8_build`. Therefore, we skip it here.
@@ -125,11 +128,14 @@ class Dense(Layer):
             )
         else:
             self.bias = None
+        print(f"building {self.name} 3")
         self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
+        print(f"building {self.name} 4")
         self.built = True
         if self.lora_rank:
+            print(f"building {self.name} 5")
             self.enable_lora(self.lora_rank)
-        print(f"  done building dense ")
+        print(f"done building {self.name}")
 
     @property
     def kernel(self):
@@ -321,7 +327,9 @@ class Dense(Layer):
         if mode == "int8":
             input_dim = input_shape[-1]
             kernel_shape = (input_dim, self.units)
+            print("int8 build begin")
             self._int8_build(kernel_shape)
+            print("int8 build end")
         elif mode == "float8":
             self._float8_build()
         else:
@@ -333,7 +341,9 @@ class Dense(Layer):
         kernel_initializer="zeros",
         kernel_scale_initializer="ones",
     ):
+        print("int8 build add input quantizer")
         self.inputs_quantizer = quantizers.AbsMaxQuantizer(axis=-1)
+        print("int8 build add kernel")
         self._kernel = self.add_weight(
             name="kernel",
             shape=kernel_shape,
@@ -341,6 +351,7 @@ class Dense(Layer):
             dtype="int8",
             trainable=False,
         )
+        print("int8 build add scale")
         self.kernel_scale = self.add_weight(
             name="kernel_scale",
             shape=(self.units,),
@@ -348,6 +359,7 @@ class Dense(Layer):
             trainable=False,
         )
         self._is_quantized = True
+        print("int8 build done")
 
     def _float8_build(self):
         from keras.src.dtype_policies import QuantizedFloat8DTypePolicy

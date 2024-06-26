@@ -389,6 +389,7 @@ def _get_class_or_fn_config(obj):
 def serialize_dict(obj):
     return {key: serialize_keras_object(value) for key, value in obj.items()}
 
+DEPTH = 0
 
 @keras_export(
     [
@@ -397,8 +398,9 @@ def serialize_dict(obj):
     ]
 )
 def deserialize_keras_object(
-    config, custom_objects=None, safe_mode=True, depth=0, **kwargs
+    config, custom_objects=None, safe_mode=True, **kwargs
 ):
+    global DEPTH
     """Retrieve the object by deserializing the config dict.
 
     The config dict is a Python dictionary that consists of a set of key-value
@@ -502,12 +504,14 @@ def deserialize_keras_object(
     tlco = global_state.get_global_attribute("custom_objects_scope_dict", {})
     gco = object_registration.GLOBAL_CUSTOM_OBJECTS
     custom_objects = {**custom_objects, **tlco, **gco}
-    prefix = ">" * (depth + 1) + " "
+    DEPTH += 1
+    prefix = ">" * DEPTH + " "
     print(
         prefix + f"start with config {config}, custom object {custom_objects}"
     )
     if config is None:
         print(prefix + "skip config is empty")
+        DEPTH -= 1
         return None
 
     if (
@@ -520,6 +524,7 @@ def deserialize_keras_object(
         print(prefix + "return custom objects lookup")
         ret = custom_objects[config]
         print(prefix + f"done start return custom objects lookup {ret}")
+        DEPTH -= 1
         return ret
 
     if isinstance(config, (list, tuple)):
@@ -532,7 +537,6 @@ def deserialize_keras_object(
                 x,
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
-                depth=depth + 1,
             )
             for x in config
         ]
@@ -540,6 +544,7 @@ def deserialize_keras_object(
             prefix
             + f"done return list or tuple, calling into deserialize_keras_object {ret}"
         )
+        DEPTH -= 1
         return ret
 
     if module_objects is not None:
@@ -592,6 +597,7 @@ def deserialize_keras_object(
                 print(prefix + "return already in module object")
                 ret = config
                 print(prefix + "done return already in module object")
+                DEPTH -= 1
                 return ret
             if isinstance(module_objects[config], types.FunctionType):
                 print(
@@ -603,9 +609,9 @@ def deserialize_keras_object(
                         module_objects[config], config, fn_module_name
                     ),
                     custom_objects=custom_objects,
-                    depth=depth + 1,
                 )
                 print(prefix + f"done return function type, ret {ret}")
+                DEPTH -= 1
                 return ret
 
             print(
@@ -617,13 +623,14 @@ def deserialize_keras_object(
                     module_objects[config], inner_config=inner_config
                 ),
                 custom_objects=custom_objects,
-                depth=depth + 1,
             )
             print(prefix + f"done return no custom object, ret {ret}")
+            DEPTH -= 1
             return ret
 
     if isinstance(config, PLAIN_TYPES):
         print(prefix + f"return plain config {config}")
+        DEPTH -= 1
         return config
     if not isinstance(config, dict):
         raise TypeError(f"Could not parse config: {config}")
@@ -635,11 +642,11 @@ def deserialize_keras_object(
                 value,
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
-                depth=depth + 1,
             )
             for key, value in config.items()
         }
         print(prefix + f"done class name or config not in config {ret}")
+        DEPTH -= 1
         return ret
 
     class_name = config["class_name"]
@@ -657,6 +664,7 @@ def deserialize_keras_object(
         )
         obj._pre_serialization_keras_history = inner_config["keras_history"]
         print(prefix + f"keras tensor {obj}")
+        DEPTH -= 1
         return obj
 
     if class_name == "__tensor__":
@@ -664,17 +672,21 @@ def deserialize_keras_object(
             inner_config["value"], dtype=inner_config["dtype"]
         )
         print(prefix + f"tensor {ret}")
+        DEPTH -= 1
         return ret
     if class_name == "__numpy__":
         ret = np.array(inner_config["value"], dtype=inner_config["dtype"])
         print(prefix + f"numpy {ret}")
+        DEPTH -= 1
         return ret
     if config["class_name"] == "__bytes__":
         ret = inner_config["value"].encode("utf-8")
         print(prefix + f"bytes {ret}")
+        DEPTH -= 1
         return ret
     if config["class_name"] == "__ellipsis__":
         print(prefix + "ellipsis")
+        DEPTH -= 1
         return Ellipsis
     if config["class_name"] == "__slice__":
         ret = slice(
@@ -682,22 +694,20 @@ def deserialize_keras_object(
                 inner_config["start"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
-                depth=depth + 1,
             ),
             deserialize_keras_object(
                 inner_config["stop"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
-                depth=depth + 1,
             ),
             deserialize_keras_object(
                 inner_config["step"],
                 custom_objects=custom_objects,
                 safe_mode=safe_mode,
-                depth=depth + 1,
             ),
         )
         print(prefix + f"slice {ret}")
+        DEPTH -= 1
         return ret
     if config["class_name"] == "__lambda__":
         print(prefix + "lambda")
@@ -710,6 +720,7 @@ def deserialize_keras_object(
                 "the loading function in order to allow `lambda` loading, "
                 "or call `keras.config.enable_unsafe_deserialization()`."
             )
+        DEPTH -= 1
         return python_utils.func_load(inner_config["value"])
     if tf is not None and config["class_name"] == "__typespec__":
         obj = _retrieve_class_or_fn(
@@ -731,6 +742,7 @@ def deserialize_keras_object(
         )
         ret = obj._deserialize(tuple(inner_config))
         print(prefix + f"typespec {ret}")
+        DEPTH -= 1
         return ret
 
     # Below: classes and functions.
@@ -748,6 +760,7 @@ def deserialize_keras_object(
             custom_objects=custom_objects,
         )
         print(prefix + f"retrieve function {fn_name}, {ret}")
+        DEPTH -= 1
         return ret
 
     # Below, handling of all classes.
@@ -756,6 +769,7 @@ def deserialize_keras_object(
         obj = get_shared_object(config["shared_object_id"])
         if obj is not None:
             print(prefix + f"return shared object {obj}")
+            DEPTH -= 1
             return obj
 
     print(prefix + f"retrieve class {class_name}")
@@ -771,6 +785,7 @@ def deserialize_keras_object(
 
     if isinstance(cls, types.FunctionType):
         print(prefix + f"function type {cls}")
+        DEPTH -= 1
         return cls
     if not hasattr(cls, "from_config"):
         raise TypeError(
@@ -786,7 +801,7 @@ def deserialize_keras_object(
     with custom_obj_scope, safe_mode_scope:
         try:
             print(prefix + f"====== calling from config with {cls}")
-            instance = cls.from_config(inner_config, depth=depth + 1)
+            instance = cls.from_config(inner_config)
             print(prefix + f"====== done calling from config with {instance}")
         except TypeError as e:
             raise TypeError(
@@ -817,6 +832,7 @@ def deserialize_keras_object(
             + f"record config instance {instance} with {config['shared_object_id']}"
         )
     print(prefix + f"return instance {instance}")
+    DEPTH -= 1
     return instance
 
 

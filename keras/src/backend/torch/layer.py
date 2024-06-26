@@ -6,7 +6,7 @@ import torch
 from keras.src.backend.common.stateless_scope import in_stateless_scope
 from keras.src.ops.operation import Operation
 
-# NEW_IMPL=False
+#NEW_IMPL=False
 NEW_IMPL = True
 
 
@@ -61,12 +61,14 @@ class TorchLayer(torch.nn.Module):
                       if id(p) == id(variable.value)]
     """
 
-    def _post_build(self):
-        # Do not track variables when in a stateless scope.
-        # The variables are not initialized.
-        if in_stateless_scope():
-            return
-        self._track_torch_params()
+    #def _post_build(self):
+    #    # Do not track variables when in a stateless scope.
+    #    # The variables are not initialized.
+    #    if in_stateless_scope() or not self._should_track_torch_params():
+    #        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{self.name} skip track torch params")
+    #        return
+    #    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!{self.name} track torch params now in post build.")
+    #    self._track_torch_params()
 
     def _track_torch_params(self):
         if not NEW_IMPL:
@@ -86,8 +88,15 @@ class TorchLayer(torch.nn.Module):
 
         # set torch_params attribute will have module automatically track
         # parameters.
-        self.torch_params = torch.nn.ParameterList(torch_params)
+        p = torch.nn.ParameterList(torch_params)
+        self.torch_params = p 
 
+    def _all_layers_built(self):
+        sublayers_status = [(layer.name, layer._all_layers_built()) for layer in self._layers]
+        sublayers_built = all(s[1] for s in sublayers_status)
+        print(f"@@@@@@@@@@@@@@@@@@@@@@@@{self.name} build: {self.built}, sublayers bult {sublayers_built}, sublayers status {sublayers_status}")
+        return self.built and sublayers_built
+    
     def _untrack_torch_params(self):
         for layer in self._layers:
             layer._untrack_torch_params()
@@ -96,23 +105,36 @@ class TorchLayer(torch.nn.Module):
     def _torch_params_tracked(self):
         return hasattr(self, "torch_params")
 
+    def _populate_torch_params(self):
+        if not self._all_layers_built():
+            raise RuntimeError(
+                "Torch parameters are not tracked yet since all layer is not "
+                "built yet. Did you forget to call model once?"
+            )
+
+        if not self._torch_params_tracked():
+            self._track_torch_params()
+
     def named_parameters(
         self,
         prefix: str = "",
         recurse: bool = True,
         remove_duplicate: bool = True,
     ) -> Iterator[Tuple[str, torch.nn.Parameter]]:
-        if not self._torch_params_tracked():
-            if self.built:
-                self._track_torch_params()
-            else:
-                raise RuntimeError(
-                    "Torch parameters are not tracked yet and layer is not "
-                    "built. Did you forget to call build()?"
-                )
+        self._populate_torch_params() 
         return torch.nn.Module.named_parameters(
             self, prefix, recurse, remove_duplicate
         )
+    
+    def state_dict(self, *args, destination=None, prefix='', keep_vars=False):
+        self._populate_torch_params() 
+        return torch.nn.Module.state_dict(
+            self, *args, destination=destination, prefix=prefix, keep_vars=keep_vars,
+        )
+    
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        self._populate_torch_params() 
+        return torch.nn.Module.load_state_dict(self, state_dict, strict, assign)
 
     def forward(self, *args, **kwargs):
         return Operation.__call__(self, *args, **kwargs)
@@ -134,11 +156,11 @@ class TorchLayer(torch.nn.Module):
         # class to be tracked by torch since keras3 user can still do
         # self._layers to reference all layers instead of using
         # torch.nn.Module.named_members().
-        # if isinstance(value, list) and all(
-        #    [isinstance(v, Layer) for v in value]
-        # ):
-        #    for idx, v in enumerate(value):
-        #        self.add_module(f"torch_module_{name}_{idx}", v)
+        if isinstance(value, list) and all(
+           [isinstance(v, Layer) for v in value]
+        ):
+           for idx, v in enumerate(value):
+               self.add_module(f"torch_module_{name}_{idx}", v)
         return name, value
 
     def _post_track_variable(self, variable):
