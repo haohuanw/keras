@@ -15,8 +15,11 @@ class SegmentSum(Operation):
         self.sorted = sorted
 
     def compute_output_spec(self, data, segment_ids):
-        num_segments = self.num_segments
-        output_shape = (num_segments,) + tuple(data.shape[1:])
+        output_shape = (
+            tuple(segment_ids[:-1])
+            + (self.num_segments,)
+            + tuple(data.shape[1:])
+        )
         return KerasTensor(shape=output_shape, dtype=data.dtype)
 
     def call(self, data, segment_ids):
@@ -34,8 +37,9 @@ def segment_sum(data, segment_ids, num_segments=None, sorted=False):
 
     Args:
         data: Input tensor.
-        segment_ids: A 1-D tensor containing segment indices for each
-            element in `data`.
+        segment_ids: A N-D tensor containing segment indices for each
+            element in `data`. Num dims for segment ids should be strictly
+            smaller or equal to number of dims in data.
         num_segments: An integer representing the total number of
             segments. If not specified, it is inferred from the maximum
             value in `segment_ids`.
@@ -68,8 +72,11 @@ class SegmentMax(Operation):
         self.sorted = sorted
 
     def compute_output_spec(self, data, segment_ids):
-        num_segments = self.num_segments
-        output_shape = (num_segments,) + tuple(data.shape[1:])
+        output_shape = (
+            tuple(segment_ids[:-1])
+            + (self.num_segments,)
+            + tuple(data.shape[1:])
+        )
         return KerasTensor(shape=output_shape, dtype=data.dtype)
 
     def call(self, data, segment_ids):
@@ -87,8 +94,8 @@ def segment_max(data, segment_ids, num_segments=None, sorted=False):
 
     Args:
         data: Input tensor.
-        segment_ids: A 1-D tensor containing segment indices for each
-            element in `data`.
+        segment_ids: A N-D tensor containing segment indices for each
+            element in `data`. data.shape[:len(segment_ids.shape)] should match.
         num_segments: An integer representing the total number of
             segments. If not specified, it is inferred from the maximum
             value in `segment_ids`.
