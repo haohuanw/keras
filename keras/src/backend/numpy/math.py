@@ -1,3 +1,5 @@
+from functools import partial
+
 import numpy as np
 
 from keras.src.backend import standardize_dtype
@@ -8,7 +10,32 @@ from keras.src.backend.numpy.core import convert_to_tensor
 from keras.src.utils.module_utils import scipy
 
 
-def segment_sum(data, segment_ids, num_segments=None, sorted=False):
+def _vmapped_segment_fn(data, segment_ids, segment_fn):
+    if len(segment_ids.shape) == 1:
+        return segment_fn(data, segment_ids)
+    # how many parallelization need to be done
+    parallelization = np.prod(segment_ids.shape[:-1]).astype(np.int32)
+    data_value_dims = data.shape[len(segment_ids.shape) :]
+    data = np.reshape(
+        data, (parallelization, segment_ids.shape[-1]) + data_value_dims
+    )
+    segment_ids = np.reshape(
+        segment_ids, (parallelization, segment_ids.shape[-1])
+    )
+    reduced_value = []
+    for d, s in zip(
+        np.vsplit(data, parallelization),
+        np.vsplit(segment_ids, parallelization),
+    ):
+        reduced_value.append(segment_fn(d[0, :], s[0, :]))
+    reduced_value = np.stack(reduced_value)
+    reduced_value = np.reshape(
+        reduced_value, segment_ids.shape[:-1] + reduced_value.shape[1:]
+    )
+    return reduced_value
+
+
+def _segment_fn_1d(data, segment_ids, reduction_method, num_segments, sorted):
     if num_segments is None:
         num_segments = np.amax(segment_ids) + 1
 
@@ -23,43 +50,36 @@ def segment_sum(data, segment_ids, num_segments=None, sorted=False):
 
     if sorted:
         result = np.zeros(data_shape, dtype=valid_data.dtype)
-        np.add.at(result, valid_segment_ids, valid_data)
+        reduction_method.at(result, valid_segment_ids, valid_data)
     else:
         sort_indices = np.argsort(valid_segment_ids)
         sorted_segment_ids = valid_segment_ids[sort_indices]
         sorted_data = valid_data[sort_indices]
 
         result = np.zeros(data_shape, dtype=valid_data.dtype)
-        np.add.at(result, sorted_segment_ids, sorted_data)
+        reduction_method.at(result, sorted_segment_ids, sorted_data)
 
     return result
+
+
+def segment_sum(data, segment_ids, num_segments=None, sorted=False):
+    segment_fn = partial(
+        _segment_fn_1d,
+        reduction_method=np.add,
+        num_segments=num_segments,
+        sorted=sorted,
+    )
+    return _vmapped_segment_fn(data, segment_ids, segment_fn)
 
 
 def segment_max(data, segment_ids, num_segments=None, sorted=False):
-    if num_segments is None:
-        num_segments = np.amax(segment_ids) + 1
-
-    valid_indices = segment_ids >= 0  # Ignore segment_ids that are -1
-    valid_data = data[valid_indices]
-    valid_segment_ids = segment_ids[valid_indices]
-
-    data_shape = list(valid_data.shape)
-    data_shape[0] = (
-        num_segments  # Replace first dimension (which corresponds to segments)
+    segment_fn = partial(
+        _segment_fn_1d,
+        reduction_method=np.maximum,
+        num_segments=num_segments,
+        sorted=sorted,
     )
-
-    if sorted:
-        result = np.zeros(data_shape, dtype=valid_data.dtype)
-        np.maximum.at(result, valid_segment_ids, valid_data)
-    else:
-        sort_indices = np.argsort(valid_segment_ids)
-        sorted_segment_ids = valid_segment_ids[sort_indices]
-        sorted_data = valid_data[sort_indices]
-
-        result = np.zeros(data_shape, dtype=valid_data.dtype)
-        np.maximum.at(result, sorted_segment_ids, sorted_data)
-
-    return result
+    return _vmapped_segment_fn(data, segment_ids, segment_fn)
 
 
 def top_k(x, k, sorted=False):

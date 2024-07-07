@@ -1,4 +1,5 @@
 import math
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -11,15 +12,25 @@ from keras.src.backend.jax.core import convert_to_tensor
 from keras.src.utils.module_utils import scipy
 
 
+def _segment_fn_transform(segment_ids, segment_fn):
+    for _ in range(len(segment_ids.shape) - 1):
+        segment_fn = jax.vmap(segment_fn)
+    return segment_fn
+
+
 def segment_sum(data, segment_ids, num_segments=None, sorted=False):
     if num_segments is None:
         raise ValueError(
             "Argument `num_segments` must be set when using the JAX backend. "
             "Received: num_segments=None"
         )
-    return jax.ops.segment_sum(
-        data, segment_ids, num_segments, indices_are_sorted=sorted
+    segment_fn = partial(
+        jax.ops.segment_sum,
+        num_segments=num_segments,
+        indices_are_sorted=sorted,
     )
+    segment_fn = _segment_fn_transform(segment_ids, segment_fn)
+    return segment_fn(data, segment_ids)
 
 
 def segment_max(data, segment_ids, num_segments=None, sorted=False):
@@ -28,9 +39,13 @@ def segment_max(data, segment_ids, num_segments=None, sorted=False):
             "Argument `num_segments` must be set when using the JAX backend. "
             "Received: num_segments=None"
         )
-    return jax.ops.segment_max(
-        data, segment_ids, num_segments, indices_are_sorted=sorted
+    segment_fn = partial(
+        jax.ops.segment_max,
+        num_segments=num_segments,
+        indices_are_sorted=sorted,
     )
+    segment_fn = _segment_fn_transform(segment_ids, segment_fn)
+    return segment_fn(data, segment_ids)
 
 
 def top_k(x, k, sorted=True):
